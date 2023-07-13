@@ -31,6 +31,16 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
 
+	p.infixParseFns = make(map[token.TokenType]infixParseFn)
+	p.registerInfix(token.PLUS, p.parseInfixExpression)
+	p.registerInfix(token.MINUS, p.parseInfixExpression)
+	p.registerInfix(token.SLASH, p.parseInfixExpression)
+	p.registerInfix(token.ASTERISK, p.parseInfixExpression)
+	p.registerInfix(token.EQ, p.parseInfixExpression)
+	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
+	p.registerInfix(token.LT, p.parseInfixExpression)
+	p.registerInfix(token.GT, p.parseInfixExpression)
+
 	// 读取两个token，以设置curToken和peekToken
 	p.nextToken()
 	p.nextToken()
@@ -167,6 +177,7 @@ const (
 	CALL        // myFunction(X)
 )
 
+// 见书中第2.7节的示例解析
 func (p *Parser) parseExpression(precedence int) ast.Expression {
 	// 找与当前token关联的前缀解析函数
 	prefix := p.prefixParseFns[p.curToken.Type]
@@ -175,6 +186,22 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 		return nil
 	}
 	leftExp := prefix()
+
+	// 对当前token来说，`precedence`是左边token算符的优先级，`p.peekPrecedence()`是右边token算符的优先级。
+	// 哪边的优先级更高，当前token就被拉到哪边AST子树使用。比如右边token的优先级更高，当前token将作为右边子树的左节点。
+	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() { // 若右边token的优先级更高，就不断继续
+		// 找与右边token关联的中缀解析函数
+		infix := p.infixParseFns[p.peekToken.Type]
+		if infix == nil {
+			return leftExp
+		}
+
+		// 移动前右边token是中缀算符
+		p.nextToken()
+		// 移动后当前token是中缀算符
+
+		leftExp = infix(leftExp)
+	}
 
 	return leftExp
 }
@@ -212,6 +239,47 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 	p.nextToken()
 
 	expression.Right = p.parseExpression(PREFIX)
+
+	return expression
+}
+
+var precedences = map[token.TokenType]int{
+	token.EQ:       EQUALS,
+	token.NOT_EQ:   EQUALS,
+	token.LT:       LESSGREATER,
+	token.GT:       LESSGREATER,
+	token.PLUS:     SUM,
+	token.MINUS:    SUM,
+	token.SLASH:    PRODUCT,
+	token.ASTERISK: PRODUCT,
+}
+
+func (p *Parser) peekPrecedence() int {
+	if p, ok := precedences[p.peekToken.Type]; ok {
+		return p
+	}
+
+	return LOWEST
+}
+
+func (p *Parser) curPrecedence() int {
+	if p, ok := precedences[p.curToken.Type]; ok {
+		return p
+	}
+
+	return LOWEST
+}
+
+func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
+	expression := &ast.InfixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+		Left:     left,
+	}
+
+	precedence := p.curPrecedence() // 当前token算符的优先级
+	p.nextToken()
+	expression.Right = p.parseExpression(precedence)
 
 	return expression
 }
