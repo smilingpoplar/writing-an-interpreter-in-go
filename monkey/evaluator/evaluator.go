@@ -8,7 +8,7 @@ import (
 func Eval(node ast.Node) object.Object {
 	switch node := node.(type) {
 	case *ast.Program:
-		return evalStatements(node.Statements)
+		return evalProgram(node)
 	case *ast.ExpressionStatement:
 		return Eval(node.Expression)
 	case *ast.IntegerLiteral:
@@ -23,7 +23,7 @@ func Eval(node ast.Node) object.Object {
 		right := Eval(node.Right)
 		return evalInfixExpression(node.Operator, left, right)
 	case *ast.BlockStatement:
-		return evalStatements(node.Statements)
+		return evalBlockStatement(node)
 	case *ast.IfExpression:
 		return evalIfExpression(node)
 	case *ast.ReturnStatement:
@@ -34,22 +34,10 @@ func Eval(node ast.Node) object.Object {
 	return nil
 }
 
-// 在下面测试用例会失败
-//
-// if (10 > 1) {
-//   if (10 > 1) {
-//	   return 10;
-//	 }
-//   return 1;
-// }
-//
-// 因为内层的`return 10;`解包成object.Integer，这样外层见它不是object.ReturnValue
-// 就继续执行`return 1;`。应该延迟对object.ReturnValue的解包。
-
-func evalStatements(stmts []ast.Statement) object.Object {
+func evalProgram(program *ast.Program) object.Object {
 	var result object.Object
 
-	for _, statement := range stmts {
+	for _, statement := range program.Statements {
 		result = Eval(statement)
 
 		if returnValue, ok := result.(*object.ReturnValue); ok {
@@ -174,4 +162,21 @@ func isTruthy(obj object.Object) bool {
 	default:
 		return true
 	}
+}
+
+// 不再像原先的`evalStatements()`、现在的`evalProgram()`函数那样返回对
+// object.ReturnValue的解包`returnValue.Value`，而是直接返回result，
+// 延迟对object.ReturnValue的解包
+func evalBlockStatement(block *ast.BlockStatement) object.Object {
+	var result object.Object
+
+	for _, statement := range block.Statements {
+		result = Eval(statement)
+
+		if result != nil && result.Type() == object.RETURN_VALUE_OBJ {
+			return result
+		}
+	}
+
+	return result
 }
