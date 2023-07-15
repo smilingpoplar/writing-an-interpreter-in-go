@@ -55,6 +55,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		body := node.Body
 		return &object.Function{Parameters: params, Env: env, Body: body}
 	case *ast.CallExpression:
+		if node.Function.TokenLiteral() == "quote" {
+			return quote(node.Arguments[0])
+		}
 		function := Eval(node.Function, env) // 将函数从ast节点转换成Object内部表示
 		if isError(function) {
 			return function
