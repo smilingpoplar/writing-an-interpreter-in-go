@@ -68,3 +68,47 @@ func testParseProgram(input string) *ast.Program {
 	p := parser.New(l)
 	return p.ParseProgram()
 }
+
+func TestExpandMacros(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			// 为宏系统规定：必须从宏返回*object.Quote
+			`
+            let infixExpression = macro() { quote(1 + 2); };
+
+            infixExpression();
+            `,
+			`(1 + 2)`,
+		},
+		{
+			// 宏的参数不会被求值，也就是说，宏的参数被自动quote()
+			// reverse(2 + 2, 10 - 5) 相当于宏里面：
+			// a = quote(2 + 2); b  = quote(10 - 5);
+			// quote(unquote(b)) <=> quote(unquote(quote(10-5))) <=> (10-5)
+			// 如果写成 quote(b) <=> b，b被不求值
+			`
+            let reverse = macro(a, b) { quote(unquote(b) - unquote(a)); };
+
+            reverse(2 + 2, 10 - 5);
+            `,
+			`(10 - 5) - (2 + 2)`,
+		},
+	}
+
+	for _, tt := range tests {
+		expected := testParseProgram(tt.expected)
+		program := testParseProgram(tt.input)
+
+		env := object.NewEnvironment()
+		DefineMacros(program, env)
+		expanded := ExpandMacros(program, env)
+
+		if expanded.String() != expected.String() {
+			t.Errorf("not equal. want=%q, got=%q",
+				expected.String(), expanded.String())
+		}
+	}
+}
